@@ -1,5 +1,4 @@
 import { Column, Entity, PrimaryGeneratedColumn } from "typeorm";
-import { AppDataSource } from "../config/db.config";
 
 @Entity()
 export class Profile {
