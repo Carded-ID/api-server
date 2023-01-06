@@ -1,5 +1,6 @@
 import { DataSource } from "typeorm";
 import { Profile } from "../models/Profile.model";
+import { User } from "../models/User.model";
 import { PG_CONFIG } from "./env.config";
 
 export const AppDataSource = new DataSource({
@@ -9,7 +10,7 @@ export const AppDataSource = new DataSource({
   username: PG_CONFIG.PG_USERNAME,
   password: PG_CONFIG.PG_PASSWORD,
   database: PG_CONFIG.PG_DATABASE,
-  entities: [Profile],
+  entities: [Profile, User],
   synchronize: true,
   logging: false,
 });
