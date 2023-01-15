@@ -7,7 +7,7 @@ import { z } from "zod";
 import { Request, Response } from "express";
 import { AppDataSource } from "../../config/db.config";
 import { Profile } from "../../models/Profile.model";
-import { validate } from "../../utils/validate.util";
+import { validate } from "../../utils/validate";
 import { UpdateResult } from "typeorm";
 
 const profileRepository = AppDataSource.getRepository(Profile);

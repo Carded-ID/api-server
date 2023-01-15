@@ -1,15 +1,29 @@
-import e, { Request, Response } from "express";
+import { CookieOptions, Request, Response } from "express";
 import {
   UserAPISignInSchema,
   UserAPISignUpSchema,
 } from "@carded-id/api-server-schema";
 import { AppDataSource } from "../../config/db.config";
 import { User } from "../../models/User.model";
-import { comparePassword, hashPassword } from "../../utils/auth.util";
-import { validate } from "../../utils/validate.util";
+import {
+  comparePassword,
+  generateTokens,
+  hashPassword,
+  verifyRefreshToken,
+} from "../../utils/authUtils";
+import { validate } from "../../utils/validate";
+import { NODE_ENV } from "../../config/env.config";
+import { TypedRequest } from "../../types/Request";
 
 const userRepository = AppDataSource.getRepository(User);
 
+const refreshTokenCookieOptions: CookieOptions = {
+  maxAge: 2 * 7 * 24 * 60 * 60 * 1000,
+  httpOnly: true,
+  sameSite: true,
+  path: "/auth/refresh_tokens",
+  secure: NODE_ENV !== "development",
+};
 // TODO: Error handling
 
 const controller = {
@@ -33,15 +47,23 @@ const controller = {
     }
 
     // save user into db
+    let user: User;
     try {
-      await userRepository.save({ email, password: encryptedPassword });
+      user = await userRepository.save({ email, password: encryptedPassword });
     } catch (err) {
       console.error(err);
       // TODO: Error handling
       return res.status(500).send("An error occured");
     }
-    return res.status(200).send("User created");
+
+    const { accessToken, refreshToken } = generateTokens(
+      { id: user.id },
+      user.refreshTokenGeneration
+    );
+    res.cookie("refresh_token", refreshToken, refreshTokenCookieOptions);
+    return res.status(200).send({ accessToken });
   },
+
   async signIn(req: Request, res: Response) {
     const { parsed, error } = await validate(UserAPISignInSchema, req);
     if (error) {
@@ -62,7 +84,64 @@ const controller = {
       return res.status(401).send("Invalid Credentials");
     }
 
-    return res.status(200).send({ email: user.email });
+    const { accessToken, refreshToken } = generateTokens(
+      { id: user.id },
+      user.refreshTokenGeneration
+    );
+    res.cookie("refresh_token", refreshToken, refreshTokenCookieOptions);
+    return res.status(200).send({ accessToken });
+  },
+
+  async signOut(req: TypedRequest, res: Response) {
+    if (!req.userId) {
+      return res.status(401).send("User not found");
+    }
+    res.cookie("refresh_token", "", refreshTokenCookieOptions);
+    res.status(200).send("Signed out");
+  },
+
+  async refreshTokens(req: Request, res: Response) {
+    const refreshToken: string = req.cookies["refresh_token"];
+    if (!refreshToken) {
+      return res.status(401).send("Invalid Refresh Token");
+    }
+
+    const { payload } = verifyRefreshToken(refreshToken);
+    if (
+      !payload ||
+      payload.id === undefined ||
+      payload.generation === undefined
+    ) {
+      return res.status(401).send("Invalid Refresh Token");
+    }
+
+    const user = await userRepository.findOneBy({ id: payload.id });
+    if (!user || user.refreshTokenGeneration !== payload.generation) {
+      return res.status(401).send("Invalid Refresh Token");
+    }
+
+    const tokens = generateTokens({ id: user.id }, user.refreshTokenGeneration);
+    res.cookie("refresh_token", tokens.refreshToken, refreshTokenCookieOptions);
+    return res.status(200).send({ accessToken: tokens.accessToken });
+  },
+
+  async globalSignOut(req: TypedRequest, res: Response) {
+    if (!req.userId) {
+      return res.status(401).send("user not found");
+    }
+
+    const user = await userRepository.findOneBy({ id: req.userId });
+    if (!user) {
+      return res.status(401).send("User not found");
+    }
+
+    await userRepository.increment(
+      { id: req.userId },
+      "refreshTokenGeneration",
+      1
+    );
+    res.cookie("refresh_token", "", refreshTokenCookieOptions);
+    res.status(200).send("Signed out");
   },
 };
 

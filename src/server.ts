@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import Express from "express";
 import bodyParser from "body-parser";
+import cookieParser from "cookie-parser";
 
 import { PORT } from "./config/env.config";
 import { AppDataSource } from "./config/db.config";
@@ -13,6 +14,7 @@ const app = Express();
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(cookieParser());
 
 app.use("/profile", profileRouter);
 app.use("/auth", authRouter);
