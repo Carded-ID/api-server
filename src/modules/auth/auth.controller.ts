@@ -14,6 +14,10 @@ import {
 import { validate } from "../../utils/validate";
 import { NODE_ENV } from "../../config/env.config";
 import { TypedRequest } from "../../types/Request";
+import {
+  ResponseError,
+  ResponseErrorTypes,
+} from "../../middleware/errorHandler";
 
 const userRepository = AppDataSource.getRepository(User);
 
@@ -24,37 +28,30 @@ const refreshTokenCookieOptions: CookieOptions = {
   path: "/auth/refresh_tokens",
   secure: NODE_ENV !== "development",
 };
-// TODO: Error handling
 
 const controller = {
   async signUp(req: Request, res: Response) {
     const { parsed, error } = await validate(UserAPISignUpSchema, req);
     if (error) {
-      return res.status(400).send("Invalid email or password");
+      // TODO: Validation Error Handling
+      console.log("Validation error", error);
+      throw new ResponseError(ResponseErrorTypes.validationError);
     }
     const { email, password } = parsed.body;
 
     const encryptedPassword = await hashPassword(password);
 
     // check email does not exist
-    try {
-      const existingUser = await userRepository.findBy({ email });
-      if (existingUser.length !== 0) {
-        return res.status(400).send("Email already exists");
-      }
-    } catch (err) {
-      return res.status(500).send("An error occured");
+    const existingUser = await userRepository.findBy({ email });
+    if (existingUser.length !== 0) {
+      throw new ResponseError(ResponseErrorTypes.emailAlreadyExists);
     }
 
     // save user into db
-    let user: User;
-    try {
-      user = await userRepository.save({ email, password: encryptedPassword });
-    } catch (err) {
-      console.error(err);
-      // TODO: Error handling
-      return res.status(500).send("An error occured");
-    }
+    const user = await userRepository.save({
+      email,
+      password: encryptedPassword,
+    });
 
     const { accessToken, refreshToken } = generateTokens(
       { id: user.id },
@@ -67,21 +64,15 @@ const controller = {
   async signIn(req: Request, res: Response) {
     const { parsed, error } = await validate(UserAPISignInSchema, req);
     if (error) {
-      return res.status(400).send("Invalid email or password");
+      // TODO: Validation Error Handling
+      console.log("Validation error", error);
+      throw new ResponseError(ResponseErrorTypes.invalidEmailOrPassword);
     }
     const { email, password } = parsed.body;
 
-    let user: User | null;
-    try {
-      user = await userRepository.findOneBy({ email });
-    } catch (err) {
-      console.error(err);
-      // TODO: Error handling
-      return res.status(500).send("An error occured");
-    }
-
+    const user = await userRepository.findOneBy({ email });
     if (!user || !(await comparePassword(password, user.password))) {
-      return res.status(401).send("Invalid Credentials");
+      throw new ResponseError(ResponseErrorTypes.invalidCredentials);
     }
 
     const { accessToken, refreshToken } = generateTokens(
@@ -94,7 +85,8 @@ const controller = {
 
   async signOut(req: TypedRequest, res: Response) {
     if (!req.userId) {
-      return res.status(401).send("User not found");
+      // should not hit this code
+      throw new ResponseError(ResponseErrorTypes.genericAuthError);
     }
     res.cookie("refresh_token", "", refreshTokenCookieOptions);
     res.status(200).send("Signed out");
@@ -103,7 +95,7 @@ const controller = {
   async refreshTokens(req: Request, res: Response) {
     const refreshToken: string = req.cookies["refresh_token"];
     if (!refreshToken) {
-      return res.status(401).send("Invalid Refresh Token");
+      throw new ResponseError(ResponseErrorTypes.invalidRefreshToken);
     }
 
     const { payload } = verifyRefreshToken(refreshToken);
@@ -112,12 +104,12 @@ const controller = {
       payload.id === undefined ||
       payload.generation === undefined
     ) {
-      return res.status(401).send("Invalid Refresh Token");
+      throw new ResponseError(ResponseErrorTypes.invalidRefreshToken);
     }
 
     const user = await userRepository.findOneBy({ id: payload.id });
     if (!user || user.refreshTokenGeneration !== payload.generation) {
-      return res.status(401).send("Invalid Refresh Token");
+      throw new ResponseError(ResponseErrorTypes.invalidRefreshToken);
     }
 
     const tokens = generateTokens({ id: user.id }, user.refreshTokenGeneration);
@@ -127,12 +119,13 @@ const controller = {
 
   async globalSignOut(req: TypedRequest, res: Response) {
     if (!req.userId) {
-      return res.status(401).send("user not found");
+      // should not hit this code
+      throw new ResponseError(ResponseErrorTypes.genericAuthError);
     }
 
     const user = await userRepository.findOneBy({ id: req.userId });
     if (!user) {
-      return res.status(401).send("User not found");
+      throw new ResponseError(ResponseErrorTypes.unauthorized);
     }
 
     await userRepository.increment(

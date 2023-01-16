@@ -7,6 +7,7 @@ import { PORT } from "./config/env.config";
 import { AppDataSource } from "./config/db.config";
 import profileRouter from "./modules/profile/profile.routes";
 import authRouter from "./modules/auth/auth.routes";
+import { errorHandler } from "./middleware/errorHandler";
 
 AppDataSource.initialize().then(() => console.log("Database Initialized"));
 
@@ -22,6 +23,8 @@ app.use("/auth", authRouter);
 app.get("/", (req, res) => {
   res.status(200).send("Hello World!");
 });
+
+app.use(errorHandler);
 
 app.listen(PORT, () => {
   console.log(`API Server listening on port ${PORT}`);

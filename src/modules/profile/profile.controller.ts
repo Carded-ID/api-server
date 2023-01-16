@@ -3,17 +3,18 @@ import {
   ProfileAPIGetProfileSchema,
   ProfileAPIUpdateProfileSchema,
 } from "@carded-id/api-server-schema";
-import { z } from "zod";
 import { Request, Response } from "express";
 import { AppDataSource } from "../../config/db.config";
+import {
+  ResponseError,
+  ResponseErrorTypes,
+} from "../../middleware/errorHandler";
 import { Profile } from "../../models/Profile.model";
 import { validate } from "../../utils/validate";
-import { UpdateResult } from "typeorm";
 
 const profileRepository = AppDataSource.getRepository(Profile);
 
-// TODO: Input validation
-// TODO: Error handling
+// TODO: Input validation Error
 
 const controller = {
   async createProfile(req: Request, res: Response) {
@@ -22,30 +23,33 @@ const controller = {
       req
     );
     if (error) {
-      return res.send(400).send(error);
+      console.log("Validation Error", error);
+      throw new ResponseError(ResponseErrorTypes.validationError);
     }
 
-    try {
-      await profileRepository.save(parsed.body);
-    } catch (err) {
-      console.error(err);
-      // TODO: Error handling
-      return res.status(500).send("An error occured");
+    const existingProfile = await profileRepository.findBy({
+      username: parsed.body.username,
+    });
+    if (existingProfile.length !== 0) {
+      throw new ResponseError(ResponseErrorTypes.profileAlreadyExists);
     }
+
+    await profileRepository.save(parsed.body);
 
     return res.status(201).send();
   },
   async getProfile(req: Request, res: Response) {
     const { parsed, error } = await validate(ProfileAPIGetProfileSchema, req);
     if (error) {
-      return res.send(400).send(error);
+      console.log("Validation Error", error);
+      throw new ResponseError(ResponseErrorTypes.validationError);
     }
 
     const profile = await profileRepository.findOneBy({
       username: parsed.params.username,
     });
     if (!profile) {
-      return res.status(404).send("Profile not found");
+      throw new ResponseError(ResponseErrorTypes.profileNotFound);
     }
 
     return res.status(200).send(profile);
@@ -56,29 +60,19 @@ const controller = {
       req
     );
     if (error) {
-      return res.send(400).send(error);
+      console.log("Validation Error", error);
+      throw new ResponseError(ResponseErrorTypes.validationError);
     }
 
     const username = parsed.params.username;
     const profile = parsed.body;
 
-    let newProfile: UpdateResult;
-    try {
-      newProfile = await profileRepository.update({ username }, profile);
-    } catch (err) {
-      console.error(err);
-      // TODO: Error handling
-      return res.status(500).send("An error occured");
-    }
+    const newProfile = await profileRepository.update({ username }, profile);
     return res.status(201).send(newProfile);
   },
   async deleteProfile(req: Request, res: Response) {
     const username = req.params.username;
-    await profileRepository.delete({ username }).catch((err) => {
-      console.error(err);
-      // TODO: Error handling
-      res.status(500).send("DB error");
-    });
+    await profileRepository.delete({ username });
     res.status(204).send();
   },
 };
