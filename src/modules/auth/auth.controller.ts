@@ -1,5 +1,6 @@
-import { CookieOptions, Request, Response } from "express";
+import { CookieOptions } from "express";
 import {
+  GenericAPISchema,
   UserAPISignInSchema,
   UserAPISignUpSchema,
 } from "@carded-id/api-server-schema";
@@ -11,13 +12,12 @@ import {
   hashPassword,
   verifyRefreshToken,
 } from "../../utils/authUtils";
-import { validate } from "../../utils/validate";
 import { NODE_ENV } from "../../config/env.config";
-import { TypedRequest } from "../../types/Request";
 import {
   ResponseError,
   ResponseErrorTypes,
 } from "../../middleware/errorHandler";
+import { TypedController } from "../../middleware/validateEndpoint";
 
 const userRepository = AppDataSource.getRepository(User);
 
@@ -29,15 +29,17 @@ const refreshTokenCookieOptions: CookieOptions = {
   secure: NODE_ENV !== "development",
 };
 
-const controller = {
-  async signUp(req: Request, res: Response) {
-    const { parsed, error } = await validate(UserAPISignUpSchema, req);
-    if (error) {
-      // TODO: Validation Error Handling
-      console.log("Validation error", error);
-      throw new ResponseError(ResponseErrorTypes.validationError);
-    }
-    const { email, password } = parsed.body;
+interface Controller {
+  signUp: TypedController<typeof UserAPISignUpSchema>;
+  signIn: TypedController<typeof UserAPISignInSchema>;
+  signOut: TypedController;
+  refreshTokens: TypedController;
+  globalSignOut: TypedController;
+}
+
+const controller: Controller = {
+  signUp: async (req, res) => {
+    const { email, password } = req.body;
 
     const encryptedPassword = await hashPassword(password);
 
@@ -61,14 +63,8 @@ const controller = {
     return res.status(200).send({ accessToken });
   },
 
-  async signIn(req: Request, res: Response) {
-    const { parsed, error } = await validate(UserAPISignInSchema, req);
-    if (error) {
-      // TODO: Validation Error Handling
-      console.log("Validation error", error);
-      throw new ResponseError(ResponseErrorTypes.invalidEmailOrPassword);
-    }
-    const { email, password } = parsed.body;
+  async signIn(req, res) {
+    const { email, password } = req.body;
 
     const user = await userRepository.findOneBy({ email });
     if (!user || !(await comparePassword(password, user.password))) {
@@ -83,7 +79,7 @@ const controller = {
     return res.status(200).send({ accessToken });
   },
 
-  async signOut(req: TypedRequest, res: Response) {
+  async signOut(req, res) {
     if (!req.userId) {
       // should not hit this code
       throw new ResponseError(ResponseErrorTypes.genericAuthError);
@@ -92,7 +88,7 @@ const controller = {
     res.status(200).send("Signed out");
   },
 
-  async refreshTokens(req: Request, res: Response) {
+  async refreshTokens(req, res) {
     const refreshToken: string = req.cookies["refresh_token"];
     if (!refreshToken) {
       throw new ResponseError(ResponseErrorTypes.invalidRefreshToken);
@@ -117,7 +113,7 @@ const controller = {
     return res.status(200).send({ accessToken: tokens.accessToken });
   },
 
-  async globalSignOut(req: TypedRequest, res: Response) {
+  async globalSignOut(req, res) {
     if (!req.userId) {
       // should not hit this code
       throw new ResponseError(ResponseErrorTypes.genericAuthError);

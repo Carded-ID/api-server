@@ -1,8 +1,8 @@
 import { NextFunction, Request, Response } from "express";
-import {} from "@carded-id/api-server-schema";
-import { TypedRequest } from "../types/Request";
 import { verifyAccessToken } from "../utils/authUtils";
 import { ResponseError, ResponseErrorTypes } from "./errorHandler";
+import { TypedRequest } from "./validateEndpoint";
+
 export const authorizeRoute = (
   req: TypedRequest,
   res: Response,

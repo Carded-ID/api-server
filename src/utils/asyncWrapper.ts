@@ -1,5 +1,4 @@
 import { NextFunction, Request, Response } from "express";
-import { TypedRequest } from "../types/Request";
 
 export const wrap = (fn: (req: Request, res: Response) => any) => {
   const asyncUtilWrapreq = (
